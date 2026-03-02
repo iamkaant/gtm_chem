@@ -1,0 +1,197 @@
+# GTM Toolkit - General Run Guide
+
+This repository provides reusable GTM workflows for projecting high-dimensional molecular fingerprints into a stable 2D latent space and comparing datasets on that shared map.
+
+You can use it for many scenarios, including:
+
+- reference vs query library comparison
+- novelty and coverage analysis
+- activity/property landscape visualization
+- reusable map training and fast projection of new batches
+
+## Main components
+
+- `gtm_large_spaces.py`: scalable CLI pipeline for train/project/compare
+- `explore_gtm_results.py`: quantitative post-analysis from saved coordinates
+- `gtm_chemical_space_analysis.ipynb`: end-to-end notebook workflow (target-focused analysis with activity overlays and diagnostics)
+- `gtm_chem/`: GTM model, fingerprinting, PCA/filtering, plotting utilities
+
+## Prerequisites
+
+- Python 3.10+ recommended
+- RDKit-compatible environment
+- Input files in SMILES or SDF format
+
+## Install dependencies
+
+Download or clone this repository, then set up a Python environment with the required packages.
+
+### Option A (recommended): conda-forge
+
+```bash
+conda create -n gtm-chem python=3.11 -y
+conda activate gtm-chem
+conda install -c conda-forge rdkit numpy scipy scikit-learn matplotlib pandas -y
+pip install hdbscan
+```
+
+### Option B: pip
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install numpy scipy scikit-learn matplotlib pandas rdkit-pypi hdbscan
+```
+
+## Input format
+
+### SMILES mode (`--format smi`, default)
+
+- one molecule per line
+- first token = SMILES
+- optional second token (name/id) is allowed and ignored by the parser
+
+### SDF mode (`--format sdf`)
+
+- use when both inputs are SDF files
+
+## CLI workflow
+
+### 1. Train/load GTM, project datasets, generate core maps
+
+```bash
+python gtm_large_spaces.py \
+  --lib1 /path/to/reference.smi \
+  --lib2 /path/to/query.smi \
+  --label-lib1 reference \
+  --label-lib2 query \
+  --fp ecfp4 \
+  --subsample 100000 \
+  --chunk 50000 \
+  --pca 50 \
+  --grid 25 \
+  --rbf 6 \
+  --n-iter 200 \
+  --outdir gtm_output
+```
+
+What it does:
+
+1. samples training molecules (`--train_on` supports `lib1`, `lib2`, or `mix`)
+2. variance filters fingerprints and fits PCA
+3. trains GTM (or loads existing artifacts)
+4. projects all molecules in chunks
+5. writes coordinate arrays + comparison figures
+
+Reuse behavior:
+
+- existing model/PCA/mask are reused unless `--retrain` is passed
+- existing coordinate files are reused unless `--reproject` is passed
+
+### 2. Run deeper exploratory analysis
+
+```bash
+python explore_gtm_results.py \
+  --outdir gtm_output \
+  --label-lib1 reference \
+  --label-lib2 query \
+  --bins 300 \
+  --smooth 1.5 \
+  --nn-sample 50000 \
+  --cluster-min-size 500
+```
+
+This uses the saved `coords_<label>.npy` files and produces coverage, enrichment, diversity, cluster, radial, and summary analyses.
+
+## Notebook workflow and use cases
+
+`gtm_chemical_space_analysis.ipynb` is a guided, configurable workflow intended for interactive analysis and reporting.
+
+Primary notebook use cases:
+
+- train a target-specific GTM reference map from curated activity data (example: ChEMBL export)
+- project your own compounds onto the fixed reference map
+- build activity landscapes (for example pIC50/pKi maps)
+- assess novelty vs known chemical space using overlay plots
+- quantify projection confidence via responsibility entropy
+- save a reusable trained GTM model for future projection-only runs
+
+Notebook outputs include:
+
+- `gtm_reference_model.pkl`
+- `gtm_activity_landscape.png`
+- `gtm_overlay.png`
+- `gtm_diagnostics.png`
+
+The notebook is best when you want:
+
+- transparent data cleaning and deduplication steps
+- target/domain-specific customization
+- exploratory interpretation with inline figures
+
+Use CLI scripts when you want batch or large-scale automated runs.
+
+## Key CLI options
+
+### `gtm_large_spaces.py`
+
+- `--lib1`, `--lib2`: input dataset files
+- `--format {smi,sdf}`: input format for both files
+- `--label-lib1`, `--label-lib2`: labels used in plots and coordinate filenames
+- `--train_on {lib1,lib2,mix}`: source for training subsample
+- `--fp`: fingerprint type (`ecfp4`, `ecfp6`, `fcfp4`, `fcfp6`, `maccs`, `rdkit`, `torsion`, `atompair`, ...)
+- `--subsample`: training sample size
+- `--chunk`: projection chunk size
+- `--pca`: PCA dimensions
+- `--grid`: latent grid size
+- `--rbf`: RBF grid size
+- `--n-iter`: EM iterations
+- `--bins`, `--smooth`, `--coverage-threshold`: visualization controls
+- `--outdir`: output directory
+- `--retrain`, `--reproject`: force recomputation
+
+### `explore_gtm_results.py`
+
+- `--outdir`: directory containing coordinate files and output images
+- `--label-lib1`, `--label-lib2`: coordinate filename labels
+- `--bins`, `--smooth`: density analysis settings
+- `--nn-sample`: sampling size for nearest-neighbor diversity metrics
+- `--cluster-min-size`: cluster analysis threshold parameter
+
+## Output artifacts
+
+From `gtm_large_spaces.py`:
+
+- `gtm_model.pkl`
+- `pca_model.pkl`
+- `var_mask.npy`
+- `gtm_convergence.png` (when training is performed)
+- `coords_<label-lib1>.npy`
+- `coords_<label-lib2>.npy`
+- `density_side_by_side.png`
+- `logratio_map.png`
+- `contour_overlay.png`
+- `coverage_map.png`
+
+From `explore_gtm_results.py`:
+
+- `explore_coverage.png`
+- `explore_quadrant.png`
+- `explore_radial.png`
+- `explore_clusters.png`
+- `explore_diversity.png`
+- `explore_summary.png`
+
+## Quick checks
+
+```bash
+python gtm_large_spaces.py --help
+python explore_gtm_results.py --help
+```
+
+## Troubleshooting
+
+- `ModuleNotFoundError: rdkit`: use conda-forge RDKit install
+- missing `coords_<label>.npy`: run `gtm_large_spaces.py` first and ensure labels match
+- memory/runtime issues: reduce `--subsample`, `--chunk`, and/or `--bins`
