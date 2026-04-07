@@ -1,6 +1,6 @@
 # GTM Toolkit - General Run Guide
 
-This repository provides reusable GTM workflows for projecting high-dimensional molecular fingerprints into a stable 2D latent space and comparing datasets on that shared map.
+This repository provides reusable Generative Topographic Mapping (GTM) workflows for projecting high-dimensional molecular fingerprints into a stable 2D latent space and comparing datasets on that shared map.
 
 You can use it for many scenarios, including:
 
@@ -9,6 +9,7 @@ You can use it for many scenarios, including:
 - activity/property landscape visualization
 - reusable map training and fast projection of new batches
 
+Based on Bishop & Svensén (1998) algorithm. 
 
 ## Main components
 
