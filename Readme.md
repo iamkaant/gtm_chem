@@ -9,12 +9,14 @@ You can use it for many scenarios, including:
 - activity/property landscape visualization
 - reusable map training and fast projection of new batches
 
+
 ## Main components
 
 - `gtm_large_spaces.py`: scalable CLI pipeline for train/project/compare
 - `explore_gtm_results.py`: quantitative post-analysis from saved coordinates
 - `gtm_chemical_space_analysis.ipynb`: end-to-end notebook workflow (target-focused analysis with activity overlays and diagnostics)
 - `gtm_chem/`: GTM model, fingerprinting, PCA/filtering, plotting utilities
+- `interactive/`: interactive Dash web app for visual exploration of GTM maps
 
 ## Prerequisites
 
@@ -104,6 +106,68 @@ python explore_gtm_results.py \
 
 This uses the saved `coords_<label>.npy` files and produces coverage, enrichment, diversity, cluster, radial, and summary analyses.
 
+### 3. Interactive map explorer (Dash)
+
+The `interactive/` directory contains a Dash web app for visual exploration of GTM results. It provides:
+
+- **Dual-panel view:** left panel shows the GTM landscape heatmap with compound points colored by pIC50; right panel shows compound points only
+- **Linked zoom/pan:** both panels stay synchronized during navigation
+- **Hover card:** hover over any point to see the compound structure, label, and pIC50
+
+#### Pipeline: from GTM output to interactive app
+
+```
+gtm_large_spaces.py  →  coords_*.npy + notebook/pipeline outputs
+         ↓
+  prepare_data.py     →  data/points.parquet  [+ data/landscape.npz]
+         ↓
+    app_v3.py         →  http://127.0.0.1:8050
+```
+
+**Step 1 — install app dependencies:**
+
+```bash
+pip install -r interactive/requirements.txt
+```
+
+Also requires RDKit (install via conda-forge as above).
+
+**Step 2 — prepare data:**
+
+If you have a CSV or Parquet file with columns `x`, `y`, `label`, `smiles`, `pIC50`:
+
+```bash
+python interactive/prepare_data.py \
+  --infile your_points.csv \
+  --out-dir interactive/data
+```
+
+Optional: pass `--landscape-npz landscape.npz` to include a background heatmap (`xgrid`, `ygrid`, `z` arrays).
+
+You can also call `export_from_dataframe(...)` directly from your analysis pipeline to skip the CLI step.
+
+**Step 3 — launch the app:**
+
+```bash
+python interactive/app_v3.py \
+  --data-dir interactive/data \
+  --port 8050
+```
+
+Then open http://127.0.0.1:8050 in your browser.
+
+**Expected data schema for `points.parquet` / `points.csv`:**
+
+| column | type | description |
+|--------|------|-------------|
+| `x` | float | GTM coordinate |
+| `y` | float | GTM coordinate |
+| `label` | str | compound ID |
+| `smiles` | str | SMILES string |
+| `pIC50` | float | activity value |
+
+Extra columns are preserved and can be shown in the hover card.
+
 ## Notebook workflow and use cases
 
 `gtm_chemical_space_analysis.ipynb` is a guided, configurable workflow intended for interactive analysis and reporting.
@@ -159,6 +223,18 @@ Use CLI scripts when you want batch or large-scale automated runs.
 - `--nn-sample`: sampling size for nearest-neighbor diversity metrics
 - `--cluster-min-size`: cluster analysis threshold parameter
 
+### `interactive/prepare_data.py`
+
+- `--infile`: input CSV or Parquet file
+- `--out-dir`: output directory for app data files (default: `data`)
+- `--x-col`, `--y-col`, `--label-col`, `--smiles-col`, `--p-col`: column name overrides
+- `--landscape-npz`: optional NPZ file with `xgrid`, `ygrid`, `z` arrays
+
+### `interactive/app_v3.py`
+
+- `--data-dir`: directory containing `points.parquet` and optionally `landscape.npz`
+- `--port`: port to serve the app on (default: 8050)
+
 ## Output artifacts
 
 From `gtm_large_spaces.py`:
@@ -183,11 +259,18 @@ From `explore_gtm_results.py`:
 - `explore_diversity.png`
 - `explore_summary.png`
 
+From `interactive/prepare_data.py`:
+
+- `points.parquet`
+- `landscape.npz` (optional)
+
 ## Quick checks
 
 ```bash
 python gtm_large_spaces.py --help
 python explore_gtm_results.py --help
+python interactive/prepare_data.py --help
+python interactive/app_v3.py --help
 ```
 
 ## Troubleshooting
@@ -195,3 +278,8 @@ python explore_gtm_results.py --help
 - `ModuleNotFoundError: rdkit`: use conda-forge RDKit install
 - missing `coords_<label>.npy`: run `gtm_large_spaces.py` first and ensure labels match
 - memory/runtime issues: reduce `--subsample`, `--chunk`, and/or `--bins`
+- app shows no points: verify `points.parquet` exists in `--data-dir` and columns match expected schema
+
+## Disclaimer
+
+This software is provided **as is**, without warranty of any kind, express or implied, including but not limited to the warranties of merchantability, fitness for a particular purpose, and non-infringement. In no event shall the authors or contributors be liable for any claim, damages, or other liability, whether in an action of contract, tort, or otherwise, arising from, out of, or in connection with the software or the use or other dealings in the software.

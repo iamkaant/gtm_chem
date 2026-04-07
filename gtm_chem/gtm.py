@@ -12,6 +12,8 @@ Key invariance property:
     adding new molecules.
 """
 
+from __future__ import annotations
+
 import numpy as np
 import pickle
 import warnings
@@ -81,6 +83,38 @@ class GTM:
     # Internal helpers
     # ------------------------------------------------------------------
 
+    def _validate_hyperparameters(self):
+        if self.grid_size < 2:
+            raise ValueError("grid_size must be >= 2.")
+        if self.rbf_size < 1:
+            raise ValueError("rbf_size must be >= 1.")
+        if self.n_iter < 1:
+            raise ValueError("n_iter must be >= 1.")
+        if self.tol <= 0:
+            raise ValueError("tol must be > 0.")
+        if self.regularization < 0:
+            raise ValueError("regularization must be >= 0.")
+        if self.rbf_width is not None and self.rbf_width <= 0:
+            raise ValueError("rbf_width must be > 0 when provided.")
+        if self.rbf_width is None and self.rbf_width_scale <= 0:
+            raise ValueError("rbf_width_scale must be > 0.")
+
+    def _check_input_matrix(self, X: np.ndarray, *, fitted: bool):
+        X = np.asarray(X, dtype=float)
+        if X.ndim != 2:
+            raise ValueError(f"X must be a 2D array, got shape={X.shape}.")
+        if X.shape[0] == 0:
+            raise ValueError("X must contain at least one sample.")
+        if X.shape[1] == 0:
+            raise ValueError("X must contain at least one feature.")
+        if not np.all(np.isfinite(X)):
+            raise ValueError("X contains NaN or infinite values.")
+        if fitted and X.shape[1] != self.W_.shape[1]:
+            raise ValueError(
+                f"X has {X.shape[1]} features but model expects {self.W_.shape[1]}."
+            )
+        return X
+
     def _make_2d_grid(self, n: int) -> np.ndarray:
         """Regular grid of n² points in [–1, 1]²."""
         x = np.linspace(-1, 1, n)
@@ -124,15 +158,28 @@ class GTM:
         Initialise W by aligning the latent grid with the first two PCs of X.
         This drastically reduces the number of EM iterations needed.
         """
-        from sklearn.decomposition import PCA
+        n_components = min(2, X.shape[0], X.shape[1])
+        mean = X.mean(axis=0)
+        Xc = X - mean
 
-        pca = PCA(n_components=min(2, X.shape[1]))
-        pca.fit(X)
+        try:
+            from sklearn.decomposition import PCA
+            pca = PCA(n_components=n_components)
+            pca.fit(X)
+            components = pca.components_
+            scale = np.sqrt(pca.explained_variance_)
+        except Exception:
+            # Fallback when sklearn is unavailable/incompatible:
+            # principal axes from SVD on centred data.
+            _, S, Vt = np.linalg.svd(Xc, full_matrices=False)
+            components = Vt[:n_components]
+            denom = max(X.shape[0] - 1, 1)
+            scale = S[:n_components] / np.sqrt(denom)
 
         # Target positions: latent grid projected onto PC space
-        scale = np.sqrt(pca.explained_variance_[:2])
-        Y_init = self.latent_grid_ @ np.diag(scale) @ pca.components_[:2]
-        Y_init += pca.mean_[None, :]  # (K, D)
+        latent = self.latent_grid_[:, :n_components]
+        Y_init = latent @ np.diag(scale) @ components
+        Y_init += mean[None, :]  # (K, D)
 
         # Solve  Φ W ≈ Y_init  in least-squares sense
         self.W_ = np.linalg.lstsq(self.Phi_, Y_init, rcond=None)[0]  # (M+1, D)
@@ -159,6 +206,8 @@ class GTM:
         -------
         self
         """
+        self._validate_hyperparameters()
+        X = self._check_input_matrix(X, fitted=False)
         N, D = X.shape
         if N < self.grid_size**2:
             warnings.warn(
@@ -219,11 +268,7 @@ class GTM:
             G = R.sum(axis=0)          # (K,)
 
             # (Φᵀ G Φ + λ/β A) W = Φᵀ Rᵀ X
-            PhiT_G = self.Phi_.T * G[None, :]          # (M+1, K)
-            lhs = PhiT_G @ self.Phi_ + (self.regularization / self.beta_) * self.A_
-            rhs = PhiT_G @ (R / G[None, :].clip(1e-8)).T  # avoid zero G
-            # Simpler and numerically equivalent:
-            lhs = self.Phi_.T @ np.diag(G) @ self.Phi_ + \
+            lhs = self.Phi_.T @ (self.Phi_ * G[:, None]) + \
                   (self.regularization / self.beta_) * self.A_
             rhs = self.Phi_.T @ (R.T @ X)              # (M+1, D)
 
@@ -261,7 +306,9 @@ class GTM:
         coords : (N, 2) latent coordinates.
         R      : (N, K) responsibilities (useful for uncertainty).
         """
-        assert self.is_fitted, "Call .fit() first."
+        if not self.is_fitted:
+            raise RuntimeError("Call .fit() first.")
+        X = self._check_input_matrix(X, fitted=True)
         R, _ = self._responsibilities(X)
 
         if projection == "mean":
@@ -286,7 +333,9 @@ class GTM:
         Returns mean log-likelihood per latent node, shaped (grid_size, grid_size).
         High values = dense / high-activity regions.
         """
-        assert self.is_fitted
+        if not self.is_fitted:
+            raise RuntimeError("Call .fit() first.")
+        X = self._check_input_matrix(X, fitted=True)
         D = X.shape[1]
         Y = self.Phi_ @ self.W_
         sq = cdist(X, Y, "sqeuclidean")     # (N, K)
@@ -311,10 +360,24 @@ class GTM:
         -------
         (grid_size, grid_size) array of responsibility-weighted mean values.
         """
-        assert self.is_fitted
+        if not self.is_fitted:
+            raise RuntimeError("Call .fit() first.")
+        X = self._check_input_matrix(X, fitted=True)
+        values = np.asarray(values, dtype=float).reshape(-1)
+        if len(values) != len(X):
+            raise ValueError(
+                f"values length ({len(values)}) must match number of rows in X ({len(X)})."
+            )
+
         R, _ = self._responsibilities(X)           # (N, K)
-        w_sum = R.sum(axis=0).clip(1e-12)          # (K,)
-        weighted = (R * values[:, None]).sum(axis=0) / w_sum
+        valid = np.isfinite(values)
+        if not np.any(valid):
+            return np.full((self.grid_size, self.grid_size), np.nan, dtype=float)
+
+        Rv = R[valid]
+        vv = values[valid]
+        w_sum = Rv.sum(axis=0).clip(1e-12)         # (K,)
+        weighted = (Rv * vv[:, None]).sum(axis=0) / w_sum
         return weighted.reshape(self.grid_size, self.grid_size)
 
     def uncertainty(self, X: np.ndarray) -> np.ndarray:
@@ -324,7 +387,9 @@ class GTM:
 
         Returns (N,) entropy values in nats.
         """
-        assert self.is_fitted
+        if not self.is_fitted:
+            raise RuntimeError("Call .fit() first.")
+        X = self._check_input_matrix(X, fitted=True)
         R, _ = self._responsibilities(X)
         R_safe = np.clip(R, 1e-30, None)
         entropy = -np.sum(R_safe * np.log(R_safe), axis=1)
@@ -342,7 +407,8 @@ class GTM:
 
     @classmethod
     def load(cls, path: str) -> "GTM":
-        """Load a previously saved GTM model."""
+        """Load a previously saved GTM model with NumPy compatibility."""
+        
         with open(path, "rb") as fh:
             model = pickle.load(fh)
         if not isinstance(model, cls):
