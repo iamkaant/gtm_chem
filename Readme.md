@@ -1,4 +1,19 @@
-# GTM Toolkit - General Run Guide
+# GTM Toolkit - Generative Topographic Mapping for Chemical Space Analysis
+
+## Why GTM?
+
+GTM offers several properties that make it well-suited for chemical space analysis in drug discovery, distinguishing it from commonly used alternatives such as t-SNE, UMAP, or PCA:
+
+- **Stable, reusable map**: GTM trains a fixed generative model. Once trained, new compounds can be projected onto the exact same 2D grid without retraining, enabling fair longitudinal comparisons across different datasets and time points.
+- **Probabilistic framework**: Each molecule is assigned a responsibility distribution over grid nodes, not just a single point. This makes projection confidence quantifiable (via entropy) and supports robust density estimation.
+- **Density-preserving layout**: The map is defined on a regular grid, so density maps, enrichment ratios, and coverage metrics are directly comparable between datasets without normalization artifacts.
+- **Interpretable geometry**: Unlike t-SNE or UMAP, GTM does not distort global distances arbitrarily. Regions on the map retain a consistent meaning, and similar regions across separate projections correspond to the same latent coordinates.
+- **Scalable to large libraries**: The chunked projection pipeline handles millions of compounds without loading all fingerprints into memory at once.
+- **Fingerprint-agnostic**: Works with any bit-vector or count-vector fingerprint (ECFP, FCFP, MACCS, RDKit, etc.), and variance filtering + PCA preprocessing handles high-dimensional, sparse inputs efficiently.
+- **Quantitative post-analysis**: Saved coordinate arrays support downstream analysis (coverage, diversity, enrichment, clustering) fully decoupled from the training step.
+
+
+Inspired by [Horvath, Marcou, Varnek. "Generative topographic mapping in drug design." Drug Discovery Today: Technologies 32 (2019): 99-107.](https://www.sciencedirect.com/science/article/pii/S1740674920300044).
 
 This repository provides reusable Generative Topographic Mapping (GTM) workflows for projecting high-dimensional molecular fingerprints into a stable 2D latent space and comparing datasets on that shared map.
 
@@ -10,6 +25,12 @@ You can use it for many scenarios, including:
 - reusable map training and fast projection of new batches
 
 Based on Bishop & Svensén (1998) algorithm. 
+
+
+## Examples
+
+![GTM trained on ligands for µ-opioid receptor retrieved from ChEMBL.](mor_chembl_gtm.png)
+![GTM trained on AmpC β-lactamase inhibitors from Liu et al. *Nat Chem Biol* 2025 (21) 1039–1045, 10.1038/s41589-024-01797-w](ampc_chembl_gtm.png)
 
 ## Main components
 
