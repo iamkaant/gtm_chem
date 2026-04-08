@@ -30,7 +30,7 @@ Based on Bishop & Svensén (1998) algorithm.
 ## Examples
 
 ![GTM trained on ligands for µ-opioid receptor retrieved from ChEMBL.](mor_chembl_gtm.png)
-![GTM trained on AmpC β-lactamase inhibitors from Liu et al. *Nat Chem Biol* 2025 (21) 1039–1045, 10.1038/s41589-024-01797-w](ampc_chembl_gtm.png)
+![GTM trained on AmpC β-lactamase inhibitors from Liu et al. *Nat Chem Biol* 2025 (21) 1039–1045, 10.1038/s41589-024-01797-w](ampc_dock_gtm.png)
 
 ## Main components
 
